@@ -1,3 +1,4 @@
 pandas
 pandapower
+numpy
 fmipp --prefer-binary

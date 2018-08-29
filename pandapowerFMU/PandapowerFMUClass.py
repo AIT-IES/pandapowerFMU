@@ -1,6 +1,7 @@
 from fmipp.export.FMIAdapterV2 import FMIAdapterV2
 import pandapower as pp
 import pandas as pd
+import numpy as np
 import os
 
 
@@ -13,11 +14,15 @@ class PandapowerFMUClass(FMIAdapterV2):
 		- write results for all variables in a single result file
 		- set FMU inputs and outputs
 	"""
+
 	# methods needed to implement FMIAdapterV2 class
 	def init(self, currentCommunicationPoint):
 		"""
 		Initialize the FMU (definition of input/output variables and parameters, enforce step size).
 		"""
+
+		### SAVE START TIME
+		self._t_start = currentCommunicationPoint
 
 		### LOAD PANDAPOWER NETWORK FROM FILE ###
 		for file in os.listdir(os.getcwd()):  # search for first file with ending '.p'
@@ -45,24 +50,39 @@ class PandapowerFMUClass(FMIAdapterV2):
 		Make a simulation step.
 		"""
 
-		### SET PROFILES ###
-		self._set_profile_values(currentCommunicationPoint)
+		### DEFINE ALL TIMES WHERE POWERFLOW IS DONE ###
+		# current simulation time is always included
+		sim_steps = [currentCommunicationPoint]
+		# check if additional power flows should be done every time step
+		if hasattr(self.net, 'time_step'):
+			# get all multiples of time_step during currentCommunicationPoint and currentCommunicationPoint+communicationStepSize
+			sim_steps_add = [t_sym for t_sym in np.arange(
+				currentCommunicationPoint + (
+				self.net.time_step - (currentCommunicationPoint - self._t_start) % self.net.time_step),
+				currentCommunicationPoint + communicationStepSize, self.net.time_step)]
+			# combine all times
+			sim_steps = np.concatenate((sim_steps, sim_steps_add), axis=None)
 
 		### GET AND SET ALL INPUTS OF FMU
 		self._get_and_set_fmi_inputs()
 
-		### RUN POWERFLOW ###
-		pp.runpp(self.net, init='results', recycle={'ppc': True,
-													'Ybus': True})  # run powerflow; initialize load flow using results
-		# from last load flow (error raised if no results dataframes); recycle data; ppc is taken from net[“_ppc”]
-		# and gets updated instead of reconstructed entirely & the admittance matrix (Ybus, Yf, Yt) is taken from
-		# ppc[“internal”] and not reconstructed
+		### LOOP OVER ALL TIME STEPS ###
+		for t_sym in sim_steps:
+			### SET PROFILES ###
+			self._set_profile_values(t_sym)
 
-		### WRITE RESULTS ###
-		with open(self.net.result_file, 'a') as result_file:
-			result_file.write(
-				str(currentCommunicationPoint) + ',' + get_pp_results(self.net, currentCommunicationPoint).iloc[
-					0].to_string(index=False, header=True).replace('\n', ',').replace(' ', '') + '\n')
+			### RUN POWERFLOW ###
+			pp.runpp(self.net, init='results', recycle={'ppc': True,
+														'Ybus': True})  # run powerflow; initialize load flow using results
+			# from last load flow (error raised if no results dataframes); recycle data; ppc is taken from net[“_ppc”]
+			# and gets updated instead of reconstructed entirely & the admittance matrix (Ybus, Yf, Yt) is taken from
+			# ppc[“internal”] and not reconstructed
+
+			### WRITE RESULTS ###
+			with open(self.net.result_file, 'a') as result_file:
+				result_file.write(
+					str(t_sym) + ',' + get_pp_results(self.net, t_sym).iloc[
+						0].to_string(index=False, header=True).replace('\n', ',').replace(' ', '') + '\n')
 
 		### SET FMU OUTPUTS ###
 		self._set_outputs()
@@ -285,15 +305,17 @@ def get_pp_results(net, time):
 	# network that are not empty
 	keys = []
 	for df_name, df in df_dict.items():
-		#df.index = df.index.map(getattr(net, df_name[4:])['name'].to_dict()) # map index (bus IDs) to bus names using
+		# df.index = df.index.map(getattr(net, df_name[4:])['name'].to_dict()) # map index (bus IDs) to bus names using
 		# information from net.bus dataframe
-		df.index = df.index.map({key: str(val) for key, val in getattr(net, df_name[4:])['name'].to_dict().items()})  # adds 'BUS: ' as identifier string to avoid loads with same names as bus and
-		keys.append(df_name[4:]) # use for additional multiindex column level
+		df.index = df.index.map({key: str(val) for key, val in getattr(net, df_name[4:])[
+			'name'].to_dict().items()})  # adds 'BUS: ' as identifier string to avoid loads with same names as bus and
+		keys.append(df_name[4:])  # use for additional multiindex column level
 		# sharing same variables, e.g., p_kw
 		df = df.stack().to_frame().T  # stack dataframe to one row which later corresponds to the
 		# current simulation time
 		dfs.append(df)
 	df_final = pd.concat(dfs,
-						 axis=1, keys=keys)  # combine all to a dataframe with one row (names of components should be unique!!)
+						 axis=1,
+						 keys=keys)  # combine all to a dataframe with one row (names of components should be unique!!)
 	df_final.index = [time]  # index corresponds to current time
 	return df_final
