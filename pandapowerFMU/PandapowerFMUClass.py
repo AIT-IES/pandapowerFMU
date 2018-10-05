@@ -307,7 +307,7 @@ def get_pp_results(net, time):
 	for df_name, df in df_dict.items():
 		# df.index = df.index.map(getattr(net, df_name[4:])['name'].to_dict()) # map index (bus IDs) to bus names using
 		# information from net.bus dataframe
-		df.index = df.index.map({key: str(val) for key, val in getattr(net, df_name[4:])[
+		df.index = df.index.to_series().map({key: str(val) for key, val in getattr(net, df_name[4:])[
 			'name'].to_dict().items()})  # adds 'BUS: ' as identifier string to avoid loads with same names as bus and
 		keys.append(df_name[4:])  # use for additional multiindex column level
 		# sharing same variables, e.g., p_kw
