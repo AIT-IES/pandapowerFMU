@@ -4,7 +4,6 @@ import pandas as pd
 import numpy as np
 import os
 
-
 class PandapowerFMUClass(FMIAdapterV2):
 	"""
 	implements methods for initialization and time steps for pandapower
@@ -49,7 +48,6 @@ class PandapowerFMUClass(FMIAdapterV2):
 		"""
 		Make a simulation step.
 		"""
-
 		### DEFINE ALL TIMES WHERE POWERFLOW IS DONE ###
 		# current simulation time is always included
 		sim_steps = [currentCommunicationPoint]
@@ -97,7 +95,7 @@ class PandapowerFMUClass(FMIAdapterV2):
 			dataframes can be used, e.g., 'res_load'
 			- component: this is the name of the component, e.g., 'static generator 1'; be aware that this name must
 			be unique within each class
-			- parameter: the name of the parameter of the component that, e.g., 'p_kw'
+			- parameter: the name of the parameter of the component that, e.g., 'p_mw'
 		"""
 		# define inputs
 		if hasattr(self.net, 'fmi_input_vars'):
@@ -310,7 +308,7 @@ def get_pp_results(net, time):
 		df.index = df.index.to_series().map({key: str(val) for key, val in getattr(net, df_name[4:])[
 			'name'].to_dict().items()})  # adds 'BUS: ' as identifier string to avoid loads with same names as bus and
 		keys.append(df_name[4:])  # use for additional multiindex column level
-		# sharing same variables, e.g., p_kw
+		# sharing same variables, e.g., p_mw
 		df = df.stack().to_frame().T  # stack dataframe to one row which later corresponds to the
 		# current simulation time
 		dfs.append(df)
